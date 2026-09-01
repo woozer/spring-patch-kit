@@ -74,6 +74,52 @@ Bash paths such as `/c/Program Files/...` avoid ambiguity with Windows
 backslashes. The repository pins scripts, configurations, documentation, and
 mail patches to LF line endings so `core.autocrlf` does not make them invalid.
 
+### IntelliJ IDEA workflow on Windows
+
+Create and verify the patched repositories from Git Bash before opening
+IntelliJ:
+
+```bash
+cd spring-patch-kit
+export PATCH_JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21"
+bash ./patchctl apply all ../patched-spring
+bash ./patchctl verify all ../patched-spring
+```
+
+Spring Framework and Spring Integration are independent Gradle builds. Open
+each one separately with **File > Open** (using separate IntelliJ windows):
+
+```text
+patched-spring/spring-framework-upstream
+patched-spring/spring-integration-upstream
+```
+
+For each project, configure **Settings > Build, Execution, Deployment > Build
+Tools > Gradle** as follows:
+
+- Build and run using: `Gradle`
+- Run tests using: `Gradle`
+- Gradle distribution: `gradle-wrapper.properties` / Wrapper
+- Gradle JVM: the installed JDK 21
+
+Reload the Gradle project after changing these settings. IntelliJ obtains the
+Gradle version from the repository's wrapper; no system Gradle installation or
+Gradle `PATH` entry is needed.
+
+You may navigate, edit, and debug focused tests from IntelliJ. The authoritative
+security and release build remains the clean Git Bash workflow:
+
+```bash
+bash ./patchctl test all ../patched-spring
+bash ./patchctl build all ../patched-spring
+bash ./patchctl publish-local all ../patched-spring
+```
+
+Do not use IntelliJ's generic **Build Project** output as the release artifact
+source and do not upload to Artifactory from IntelliJ. Use the Gradle-wrapper
+artifacts produced by `patchctl`, followed by the documented manual Artifactory
+upload and clean-consumer validation.
+
 ## Recreate everything
 
 Choose a new workspace. Existing target repositories are never overwritten:
