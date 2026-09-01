@@ -104,6 +104,40 @@ Build or publish both complete custom artifact sets to Maven Local:
 ./patchctl publish-local all /path/to/replayed-spring
 ```
 
+## Manual Artifactory upload
+
+This environment requires a manual Artifactory upload. `patchctl` deliberately
+does not connect or authenticate to Artifactory. The `publish-local` command
+prepares the complete Maven publications under the current user's local Maven
+repository:
+
+```text
+~/.m2/repository/org/springframework/
+```
+
+Upload both complete private version sets to the approved Artifactory Maven
+repository while preserving their Maven coordinates and directory layout:
+
+```text
+org.springframework:*:6.2.19-cve.1
+org.springframework.integration:*:6.5.10-cve.1
+```
+
+Upload the generated POMs and required JARs (including BOM POMs and any source
+or Javadoc artifacts required by local policy). Do not upload Maven-local
+bookkeeping files such as `_remote.repositories` or `maven-metadata-local.xml`;
+Artifactory manages its own repository metadata.
+
+Enter Artifactory credentials only in the approved Artifactory interface. Do
+not place its URL, username, password, access token, or API key in this
+repository, shell history, patch files, or build logs.
+
+After the manual upload, validate from a clean application environment that has
+no matching artifacts in Maven Local. Resolve both private versions from
+Artifactory, inspect the dependency graph, and run the application smoke and
+integration tests. Record the uploader, date, target repository, artifact
+checksums, and validation result in the CVE release evidence.
+
 Commands can target one project instead of `all`:
 
 ```bash
@@ -145,7 +179,8 @@ series.
 A production pipeline should run these stages:
 
 ```text
-apply -> verify -> test -> build -> publish internal -> dependency smoke test
+apply -> verify -> test -> build -> publish-local -> manual Artifactory upload
+      -> clean dependency resolution -> application smoke test
 ```
 
 Use immutable versions such as `6.2.19-cve.1`; never publish private artifacts
@@ -159,5 +194,5 @@ Artifactory repository, generate checksums and an SBOM, and retain:
 - VEX statements or scanner exceptions for version-only findings.
 
 Credentials and internal repository URLs intentionally do not live in this
-kit. Supply them through the CI secret store and your organization's Gradle
-publishing configuration.
+kit. In this environment, a human supplies them only through the approved
+manual Artifactory upload process.

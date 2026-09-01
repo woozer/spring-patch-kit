@@ -37,8 +37,12 @@ Mandatory rules:
     Markdown, and mail patches on LF line endings and avoid dependencies on
     Python, Maven, `jq`, or a system patch utility.
 12. Do not push, publish artifacts, create releases, or change remote state
-    without explicit user authorization. CI secrets must supply publishing
-    credentials.
+    without explicit user authorization. Publishing credentials must remain
+    outside this repository and agent context.
+13. This environment requires manual Artifactory upload. `patchctl` may prepare
+    Maven-local publications but must not connect to Artifactory or handle its
+    URL or credentials. Document and verify the human upload from a clean
+    consumer environment.
 
 When a security fix cannot be backported confidently from authoritative source,
 stop and report the missing provenance or technical blocker instead of
