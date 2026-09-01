@@ -113,6 +113,11 @@ Commands can target one project instead of `all`:
 
 ## Add another CVE
 
+Follow the complete [new CVE backport runbook](docs/new-cve-runbook.md). It
+includes the release checklist, immutable versioning rules, Windows Git Bash
+commands, clean-room replay, and evidence requirements. Start an audit record
+from [the CVE record template](docs/cve-record-template.md).
+
 1. Start from the pinned base tag in a clean clone.
 2. Create or reuse the project's backport branch.
 3. Add one production change and its tests in one commit per CVE. Include the
