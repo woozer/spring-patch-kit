@@ -150,6 +150,41 @@ Build or publish both complete custom artifact sets to Maven Local:
 ./patchctl publish-local all /path/to/replayed-spring
 ```
 
+## Publish the patched source forks
+
+Keep the patch kit and the two patched Spring source repositories separate.
+Create these public forks once through GitHub's web interface:
+
+- `spring-projects/spring-framework` to `woozer/spring-framework`
+- `spring-projects/spring-integration` to `woozer/spring-integration`
+
+Do not enter a GitHub token in this repository or in a command URL. Preview the
+publication from a verified workspace first:
+
+```bash
+bash ./patchctl publish-source all /path/to/replayed-spring
+```
+
+The preview shows the exact commit, branch, immutable private-version tag, and
+public fork URL for each project. After reviewing it, run the push yourself in
+Git Bash so GitHub authentication remains in Git Credential Manager or the
+browser:
+
+```bash
+bash ./patchctl publish-source all /path/to/replayed-spring --push
+```
+
+For each repository, `--push` adds a dedicated `patch-publish` remote if needed
+and atomically pushes only the registered backport branch and private-version
+tag. It does not push the default branch, other branches, build output, Gradle
+caches, or the patch-kit repository. It never force-pushes. The existing
+official Spring `origin` remote is left unchanged.
+
+Fork creation remains manual because automating it would require GitHub account
+credentials. The public HTTPS fork URLs in `project.conf` contain no secrets.
+If one project in an `all` operation fails, investigate and rerun it; Git cannot
+make a single atomic transaction across two independent repositories.
+
 ## Manual Artifactory upload
 
 This environment requires a manual Artifactory upload. `patchctl` deliberately

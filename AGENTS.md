@@ -43,6 +43,11 @@ Mandatory rules:
     Maven-local publications but must not connect to Artifactory or handle its
     URL or credentials. Document and verify the human upload from a clean
     consumer environment.
+14. Source forks are separate from this repository. Create GitHub forks
+    manually, preview `publish-source` first, and push only from the user's own
+    terminal with `--push`. Use the configured public HTTPS URL, a dedicated
+    `patch-publish` remote, an immutable private-version tag, an atomic push,
+    and never force-push.
 
 When a security fix cannot be backported confidently from authoritative source,
 stop and report the missing provenance or technical blocker instead of

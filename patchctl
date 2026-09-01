@@ -15,6 +15,7 @@ Usage:
   patchctl test <project|all> <workspace>
   patchctl build <project|all> <workspace>
   patchctl publish-local <project|all> <workspace>
+  patchctl publish-source <project|all> <workspace> [--push]
   patchctl capture <project> <source-repository> <new-output-directory>
 
 Environment:
@@ -22,6 +23,8 @@ Environment:
                     discovered automatically when this is unset.
 
 The apply command never overwrites an existing target repository.
+The publish-source command is a preview unless --push is supplied. It never
+force-pushes and never stores credentials.
 USAGE
 }
 
@@ -47,6 +50,7 @@ load_project() {
 	unset PROJECT_ID DISPLAY_NAME REPOSITORY_URL BASE_REF TARGET_DIRECTORY
 	unset PATCH_BRANCH EXPECTED_VERSION VERSION_FILE JAVA_VERSION
 	unset TEST_ARGS BUILD_ARGS PUBLISH_ARGS EXPECTED_CVES
+	unset PUBLISH_REPOSITORY_URL SOURCE_TAG
 
 	# Project definitions are trusted files maintained in this kit.
 	# shellcheck source=/dev/null
@@ -141,9 +145,11 @@ verify_one() {
 	[[ -z "$(git -C "$repository" status --porcelain)" ]] ||
 		die "$PROJECT_ID worktree is not clean"
 
+	local commit_subjects
+	commit_subjects="$(git -C "$repository" log "$BASE_REF..HEAD" --format='%s')"
 	local cve
 	for cve in "${EXPECTED_CVES[@]}"; do
-		git -C "$repository" log "$BASE_REF..HEAD" --format='%s' | grep -Fq "$cve" ||
+		grep -Fq "$cve" <<<"$commit_subjects" ||
 			die "$PROJECT_ID is missing an atomic commit for $cve"
 	done
 
@@ -221,6 +227,82 @@ run_gradle_one() {
 	)
 }
 
+source_publish_one() {
+	local project_id="$1"
+	local workspace="$2"
+	local mode="$3"
+	load_project "$project_id"
+	verify_one "$project_id" "$workspace"
+
+	[[ -n "${PUBLISH_REPOSITORY_URL:-}" ]] ||
+		die "missing PUBLISH_REPOSITORY_URL for $PROJECT_ID"
+	[[ -n "${SOURCE_TAG:-}" ]] || die "missing SOURCE_TAG for $PROJECT_ID"
+	case "$PUBLISH_REPOSITORY_URL" in
+		https://*@*) die "publish URL must not contain credentials" ;;
+		https://github.com/*.git) ;;
+		*) die "publish URL must be a public GitHub HTTPS .git URL" ;;
+	esac
+
+	local repository="$workspace/$TARGET_DIRECTORY"
+	git -C "$repository" merge-base --is-ancestor "$BASE_REF" HEAD ||
+		die "$BASE_REF is not an ancestor of $PROJECT_ID HEAD"
+
+	local expected_commit_count=0
+	local patch
+	for patch in "$PROJECT_CONFIG_DIR"/patches/*.patch; do
+		[[ -f "$patch" ]] || continue
+		expected_commit_count=$((expected_commit_count + 1))
+	done
+	[[ "$expected_commit_count" -gt 0 ]] || die "no patches found for $PROJECT_ID"
+
+	local actual_commit_count
+	actual_commit_count="$(git -C "$repository" rev-list --count "$BASE_REF..HEAD")"
+	[[ "$actual_commit_count" -eq "$expected_commit_count" ]] ||
+		die "$PROJECT_ID has $actual_commit_count backport commits; expected $expected_commit_count from the registered patch series"
+
+	local head_commit
+	head_commit="$(git -C "$repository" rev-parse HEAD)"
+	if git -C "$repository" show-ref --verify --quiet "refs/tags/$SOURCE_TAG"; then
+		local tag_commit
+		tag_commit="$(git -C "$repository" rev-list -n 1 "$SOURCE_TAG")"
+		[[ "$tag_commit" == "$head_commit" ]] ||
+			die "existing tag $SOURCE_TAG does not point to $PROJECT_ID HEAD"
+	fi
+
+	echo
+	echo "source publication plan for $PROJECT_ID"
+	echo "  repository: $repository"
+	echo "  commit:     $head_commit"
+	echo "  branch:     $PATCH_BRANCH"
+	echo "  tag:        $SOURCE_TAG"
+	echo "  fork:       $PUBLISH_REPOSITORY_URL"
+	git -C "$repository" log --reverse --oneline "$BASE_REF..HEAD" | sed 's/^/    /'
+
+	if [[ "$mode" != "push" ]]; then
+		echo "preview only; rerun with --push after creating the GitHub fork"
+		return
+	fi
+
+	if ! git -C "$repository" show-ref --verify --quiet "refs/tags/$SOURCE_TAG"; then
+		git -C "$repository" tag "$SOURCE_TAG" "$head_commit"
+	fi
+
+	local remote_name="patch-publish"
+	if git -C "$repository" remote get-url "$remote_name" >/dev/null 2>&1; then
+		local configured_url
+		configured_url="$(git -C "$repository" remote get-url "$remote_name")"
+		[[ "$configured_url" == "$PUBLISH_REPOSITORY_URL" ]] ||
+			die "$remote_name points to $configured_url, expected $PUBLISH_REPOSITORY_URL"
+	else
+		git -C "$repository" remote add "$remote_name" "$PUBLISH_REPOSITORY_URL"
+	fi
+
+	echo "pushing only $PATCH_BRANCH and $SOURCE_TAG (never force)"
+	git -C "$repository" push --atomic --set-upstream "$remote_name" \
+		"HEAD:refs/heads/$PATCH_BRANCH" \
+		"refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
+}
+
 capture_one() {
 	local project_id="$1"
 	local source_repository="$2"
@@ -266,6 +348,12 @@ main() {
 			else
 				for_selection "$selection" run_gradle_one "$workspace" "$command"
 			fi
+			;;
+		publish-source)
+			[[ $# -eq 3 || ( $# -eq 4 && "${4:-}" == "--push" ) ]] || { usage; exit 2; }
+			local publish_mode="preview"
+			[[ "${4:-}" == "--push" ]] && publish_mode="push"
+			for_selection "$2" source_publish_one "$3" "$publish_mode"
 			;;
 		capture)
 			[[ $# -eq 4 ]] || { usage; exit 2; }
