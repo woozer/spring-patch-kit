@@ -1,0 +1,22 @@
+From 0f486b29ca0f13def37adc43aa07babc4c443d78 Mon Sep 17 00:00:00 2001
+From: woozer <wouter.zwiers@gmail.com>
+Date: Tue, 1 Sep 2026 16:00:24 +0200
+Subject: [PATCH 3/4] Set private Spring Framework backport version
+
+---
+ gradle.properties | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gradle.properties b/gradle.properties
+index edc16dab..48ac6a7d 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -1,4 +1,4 @@
+-version=6.2.19
++version=6.2.19-cve.1
+ 
+ org.gradle.caching=true
+ org.gradle.jvmargs=-Xmx2048m
+-- 
+2.50.1 (Apple Git-155)
+

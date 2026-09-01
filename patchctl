@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECTS_DIR="$KIT_DIR/projects"
+
+usage() {
+	cat <<'USAGE'
+Usage:
+  patchctl doctor
+  patchctl list
+  patchctl apply <project|all> <workspace>
+  patchctl verify <project|all> <workspace>
+  patchctl test <project|all> <workspace>
+  patchctl build <project|all> <workspace>
+  patchctl publish-local <project|all> <workspace>
+  patchctl capture <project> <source-repository> <new-output-directory>
+
+Environment:
+  PATCH_JAVA_HOME   JDK used for Gradle commands. On macOS, Java 21 is
+                    discovered automatically when this is unset.
+
+The apply command never overwrites an existing target repository.
+USAGE
+}
+
+die() {
+	echo "error: $*" >&2
+	exit 1
+}
+
+project_ids() {
+	local config
+	for config in "$PROJECTS_DIR"/*/project.conf; do
+		[[ -f "$config" ]] || continue
+		basename "$(dirname "$config")"
+	done
+}
+
+load_project() {
+	local requested_id="$1"
+	PROJECT_CONFIG_DIR="$PROJECTS_DIR/$requested_id"
+	local config="$PROJECT_CONFIG_DIR/project.conf"
+	[[ -f "$config" ]] || die "unknown project '$requested_id'; run 'patchctl list'"
+
+	unset PROJECT_ID DISPLAY_NAME REPOSITORY_URL BASE_REF TARGET_DIRECTORY
+	unset PATCH_BRANCH EXPECTED_VERSION VERSION_FILE JAVA_VERSION
+	unset TEST_ARGS BUILD_ARGS PUBLISH_ARGS EXPECTED_CVES
+
+	# Project definitions are trusted files maintained in this kit.
+	# shellcheck source=/dev/null
+	source "$config"
+
+	[[ "${PROJECT_ID:-}" == "$requested_id" ]] || die "invalid PROJECT_ID in $config"
+	[[ -n "${DISPLAY_NAME:-}" ]] || die "missing DISPLAY_NAME in $config"
+	[[ -n "${REPOSITORY_URL:-}" ]] || die "missing REPOSITORY_URL in $config"
+	[[ -n "${BASE_REF:-}" ]] || die "missing BASE_REF in $config"
+	[[ -n "${TARGET_DIRECTORY:-}" ]] || die "missing TARGET_DIRECTORY in $config"
+	[[ -n "${PATCH_BRANCH:-}" ]] || die "missing PATCH_BRANCH in $config"
+	[[ -n "${EXPECTED_VERSION:-}" ]] || die "missing EXPECTED_VERSION in $config"
+	[[ -n "${VERSION_FILE:-}" ]] || die "missing VERSION_FILE in $config"
+}
+
+for_selection() {
+	local selection="$1"
+	shift
+	local callback="$1"
+	shift
+	local project_id
+
+	if [[ "$selection" == "all" ]]; then
+		while IFS= read -r project_id; do
+			[[ -n "$project_id" ]] || continue
+			"$callback" "$project_id" "$@"
+		done < <(project_ids)
+	else
+		"$callback" "$selection" "$@"
+	fi
+}
+
+list_one() {
+	local project_id="$1"
+	load_project "$project_id"
+	printf '%-35s %-28s %s\n' "$PROJECT_ID" "$EXPECTED_VERSION" "$DISPLAY_NAME"
+}
+
+doctor() {
+	local failed=false
+	local tool
+	for tool in bash git; do
+		if command -v "$tool" >/dev/null 2>&1; then
+			echo "found $tool: $(command -v "$tool")"
+		else
+			echo "missing required tool: $tool" >&2
+			failed=true
+		fi
+	done
+
+	if command -v java >/dev/null 2>&1; then
+		echo "default Java:"
+		java -version 2>&1 | head -n 1
+	else
+		echo "missing Java; apply and verify work, but test/build/publish do not" >&2
+	fi
+
+	local java_home=""
+	if [[ -n "${PATCH_JAVA_HOME:-}" ]]; then
+		java_home="$PATCH_JAVA_HOME"
+	elif [[ "$(uname -s)" == "Darwin" && -x /usr/libexec/java_home ]]; then
+		java_home="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
+	elif [[ -n "${JAVA_HOME:-}" ]]; then
+		java_home="$JAVA_HOME"
+	fi
+	if [[ -n "$java_home" && -x "$java_home/bin/java" ]]; then
+		echo "Gradle Java: $java_home"
+		"$java_home/bin/java" -version 2>&1 | head -n 1
+	else
+		echo "Java 21 was not discovered; set PATCH_JAVA_HOME before Gradle operations" >&2
+	fi
+
+	if [[ "$failed" == true ]]; then
+		return 1
+	fi
+	echo "environment is ready for patch replay"
+}
+
+verify_one() {
+	local project_id="$1"
+	local workspace="$2"
+	load_project "$project_id"
+	local repository="$workspace/$TARGET_DIRECTORY"
+
+	[[ -d "$repository/.git" ]] || die "$repository is not a Git repository"
+	local branch
+	branch="$(git -C "$repository" branch --show-current)"
+	[[ "$branch" == "$PATCH_BRANCH" ]] ||
+		die "$PROJECT_ID is on '$branch', expected '$PATCH_BRANCH'"
+	grep -Fqx "version=$EXPECTED_VERSION" "$repository/$VERSION_FILE" ||
+		die "$PROJECT_ID does not declare version $EXPECTED_VERSION"
+	[[ -z "$(git -C "$repository" status --porcelain)" ]] ||
+		die "$PROJECT_ID worktree is not clean"
+
+	local cve
+	for cve in "${EXPECTED_CVES[@]}"; do
+		git -C "$repository" log "$BASE_REF..HEAD" --format='%s' | grep -Fq "$cve" ||
+			die "$PROJECT_ID is missing an atomic commit for $cve"
+	done
+
+	echo "verified $PROJECT_ID at $EXPECTED_VERSION"
+}
+
+apply_one() {
+	local project_id="$1"
+	local workspace="$2"
+	load_project "$project_id"
+	local repository="$workspace/$TARGET_DIRECTORY"
+
+	[[ ! -e "$repository" ]] ||
+		die "$repository already exists; choose a fresh workspace or move it first"
+	mkdir -p "$workspace"
+
+	echo "cloning $DISPLAY_NAME from $BASE_REF"
+	git clone --depth 1 --branch "$BASE_REF" "$REPOSITORY_URL" "$repository"
+	git -C "$repository" switch -c "$PATCH_BRANCH"
+
+	local patch found_patch=false
+	for patch in "$PROJECT_CONFIG_DIR"/patches/*.patch; do
+		[[ -f "$patch" ]] || continue
+		found_patch=true
+		echo "applying $(basename "$patch")"
+		if ! git -C "$repository" am --3way "$patch"; then
+			git -C "$repository" am --abort || true
+			die "failed to apply $(basename "$patch") to $PROJECT_ID"
+		fi
+	done
+	[[ "$found_patch" == true ]] || die "no patches found for $PROJECT_ID"
+
+	verify_one "$project_id" "$workspace"
+}
+
+resolve_java_home() {
+	if [[ -n "${PATCH_JAVA_HOME:-}" ]]; then
+		printf '%s\n' "$PATCH_JAVA_HOME"
+		return
+	fi
+	if [[ "$(uname -s)" == "Darwin" && -x /usr/libexec/java_home ]]; then
+		/usr/libexec/java_home -v "${JAVA_VERSION:-21}"
+		return
+	fi
+	if [[ -n "${JAVA_HOME:-}" ]]; then
+		printf '%s\n' "$JAVA_HOME"
+		return
+	fi
+	die "set PATCH_JAVA_HOME to a Java ${JAVA_VERSION:-21} JDK"
+}
+
+run_gradle_one() {
+	local project_id="$1"
+	local workspace="$2"
+	local operation="$3"
+	load_project "$project_id"
+	verify_one "$project_id" "$workspace"
+	local repository="$workspace/$TARGET_DIRECTORY"
+	local java_home
+	java_home="$(resolve_java_home)"
+	[[ -x "$java_home/bin/java" ]] || die "$java_home does not contain an executable Java runtime"
+
+	local -a args
+	case "$operation" in
+		test) args=("${TEST_ARGS[@]}") ;;
+		build) args=("${BUILD_ARGS[@]}") ;;
+		publish-local) args=("${PUBLISH_ARGS[@]}") ;;
+		*) die "unsupported Gradle operation '$operation'" ;;
+	esac
+
+	echo "running $operation for $PROJECT_ID with $java_home"
+	(
+		cd "$repository"
+		env JAVA_HOME="$java_home" ./gradlew "${args[@]}"
+	)
+}
+
+capture_one() {
+	local project_id="$1"
+	local source_repository="$2"
+	local output_directory="$3"
+	load_project "$project_id"
+
+	[[ -d "$source_repository/.git" ]] || die "$source_repository is not a Git repository"
+	[[ -z "$(git -C "$source_repository" status --porcelain)" ]] ||
+		die "source repository worktree is not clean"
+	git -C "$source_repository" rev-parse --verify "$BASE_REF^{commit}" >/dev/null
+	[[ ! -e "$output_directory" ]] ||
+		die "$output_directory already exists; capture requires a new directory"
+	mkdir -p "$output_directory"
+
+	git -C "$source_repository" format-patch \
+		--output-directory "$output_directory" "$BASE_REF..HEAD"
+	echo "captured $PROJECT_ID patches in $output_directory"
+}
+
+main() {
+	local command="${1:-}"
+	case "$command" in
+		doctor)
+			[[ $# -eq 1 ]] || { usage; exit 2; }
+			doctor
+			;;
+		list)
+			printf '%-35s %-28s %s\n' PROJECT VERSION DESCRIPTION
+			local project_id
+			while IFS= read -r project_id; do
+				[[ -n "$project_id" ]] || continue
+				list_one "$project_id"
+			done < <(project_ids)
+			;;
+		apply|verify|test|build|publish-local)
+			[[ $# -eq 3 ]] || { usage; exit 2; }
+			local selection="$2"
+			local workspace="$3"
+			if [[ "$command" == "apply" ]]; then
+				for_selection "$selection" apply_one "$workspace"
+			elif [[ "$command" == "verify" ]]; then
+				for_selection "$selection" verify_one "$workspace"
+			else
+				for_selection "$selection" run_gradle_one "$workspace" "$command"
+			fi
+			;;
+		capture)
+			[[ $# -eq 4 ]] || { usage; exit 2; }
+			capture_one "$2" "$3" "$4"
+			;;
+		-h|--help|help)
+			usage
+			;;
+		*)
+			usage
+			exit 2
+			;;
+	esac
+}
+
+main "$@"
