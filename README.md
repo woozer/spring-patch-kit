@@ -150,6 +150,51 @@ Build or publish both complete custom artifact sets to Maven Local:
 ./patchctl publish-local all /path/to/replayed-spring
 ```
 
+### Selective Maven publication
+
+The complete-family publication above remains the lowest-risk option. When the
+environment requires uploading only affected modules, prepare a separate
+Maven-only repository containing exactly the five patched artifacts:
+
+```bash
+bash ./patchctl stage-selective all /path/to/replayed-spring \
+  /path/to/new/selective-maven-upload
+```
+
+The output directory must not exist. The command generates and validates:
+
+```text
+org.springframework:spring-web:6.2.19-cve.1
+org.springframework:spring-webmvc:6.2.19-cve.1
+org.springframework.integration:spring-integration-jdbc:6.5.10-cve.1
+org.springframework.integration:spring-integration-zip:6.5.10-cve.1
+org.springframework.integration:spring-integration-scripting:6.5.10-cve.1
+```
+
+Each coordinate includes its main, source, and Javadoc JAR plus a POM. The
+selective POM transformer preserves dependencies between patched artifacts
+(`spring-webmvc` still requires patched `spring-web`) and rewrites unaffected
+Spring Framework dependencies to `6.2.19` and unaffected Spring Integration
+dependencies to `6.5.10`. It then rejects any remaining custom-version
+dependency on an artifact that is not staged.
+
+The staging repository deliberately omits Gradle module metadata so Maven and
+Gradle consumers use the validated POM dependency graph. `SHA256SUMS` covers
+every staged artifact. Retain that manifest as release evidence rather than
+uploading it as a Maven coordinate.
+
+Selective consumers must manage the five modules directly; do not import the
+custom Framework or Integration BOM because the remaining custom-version
+modules are intentionally absent. Start from the checked-in
+[selective Maven consumer example](examples/selective-maven-consumer/pom.xml)
+and confirm the resolved dependency tree from an empty local repository.
+
+This mode creates a deliberately mixed release: five patched artifacts plus
+official base-version dependencies. Run application smoke and integration
+tests before approval. Do not combine the selective and complete publication
+modes under the same immutable private version after either one has been
+released.
+
 ## Publish the patched source forks
 
 Keep the patch kit and the two patched Spring source repositories separate.
@@ -188,16 +233,22 @@ make a single atomic transaction across two independent repositories.
 ## Manual Artifactory upload
 
 This environment requires a manual Artifactory upload. `patchctl` deliberately
-does not connect or authenticate to Artifactory. The `publish-local` command
-prepares the complete Maven publications under the current user's local Maven
-repository:
+does not connect or authenticate to Artifactory. Choose one immutable release
+mode before uploading:
+
+- `publish-local` prepares the complete Maven publication families under the
+  current user's local Maven repository;
+- `stage-selective` prepares only the five affected Maven modules in a new,
+  checksummed upload directory.
+
+The complete publications are stored under:
 
 ```text
 ~/.m2/repository/org/springframework/
 ```
 
-Upload both complete private version sets to the approved Artifactory Maven
-repository while preserving their Maven coordinates and directory layout:
+For complete mode, upload both private version sets to the approved Artifactory
+Maven repository while preserving their Maven coordinates and directory layout:
 
 ```text
 org.springframework:*:6.2.19-cve.1
@@ -208,6 +259,12 @@ Upload the generated POMs and required JARs (including BOM POMs and any source
 or Javadoc artifacts required by local policy). Do not upload Maven-local
 bookkeeping files such as `_remote.repositories` or `maven-metadata-local.xml`;
 Artifactory manages its own repository metadata.
+
+For selective mode, upload only the `org/` repository paths inside the new
+staging directory. Preserve every POM and JAR path exactly. Retain
+`SHA256SUMS` with the release record and verify Artifactory's stored checksums
+against it. Do not upload a custom BOM: consumers manage the five affected
+coordinates directly using the example POM.
 
 Enter Artifactory credentials only in the approved Artifactory interface. Do
 not place its URL, username, password, access token, or API key in this
@@ -224,6 +281,8 @@ Commands can target one project instead of `all`:
 ```bash
 ./patchctl list
 ./patchctl test spring-framework-6.2.19 /path/to/replayed-spring
+./patchctl stage-selective spring-framework-6.2.19 \
+  /path/to/replayed-spring /path/to/new/framework-selective-upload
 ```
 
 ## Add another CVE

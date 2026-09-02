@@ -48,6 +48,13 @@ Mandatory rules:
     terminal with `--push`. Use the configured public HTTPS URL, a dedicated
     `patch-publish` remote, an immutable private-version tag, an atomic push,
     and never force-push.
+15. Selective Maven publication is allowed only for explicitly registered
+    affected modules. Preserve private-version dependencies between staged
+    patched modules, rewrite dependencies on unstaged modules to the pinned
+    official base version, omit Gradle module metadata, generate SHA-256
+    evidence, and prove all staged POMs transitively from an empty Maven cache.
+    Never publish a custom BOM for an incomplete artifact family, and never mix
+    complete and selective modes under one already released private version.
 
 When a security fix cannot be backported confidently from authoritative source,
 stop and report the missing provenance or technical blocker instead of

@@ -1,0 +1,52 @@
+import org.gradle.api.publish.maven.MavenPublication
+
+String requiredProperty(String name) {
+	String value = System.getProperty(name)
+	if (!value) {
+		throw new GradleException("Missing required system property: ${name}")
+	}
+	return value
+}
+
+String baseVersion = requiredProperty('springPatchKit.baseVersion')
+String customVersion = requiredProperty('springPatchKit.customVersion')
+String internalGroup = requiredProperty('springPatchKit.internalGroup')
+Set<String> selectedArtifacts = requiredProperty('springPatchKit.selectedArtifacts').split(',') as Set
+
+gradle.projectsEvaluated {
+	Map<String, Project> selectedProjects = selectedArtifacts.collectEntries { artifactId ->
+		[(artifactId): gradle.rootProject.findProject(":${artifactId}")]
+	}
+	if (selectedProjects.values().every { it == null }) {
+		return
+	}
+	selectedProjects.findAll { artifactId, selectedProject -> selectedProject == null }.each { artifactId, ignored ->
+		throw new GradleException("Unknown selective publication project: ${artifactId}")
+	}
+
+	selectedProjects.each { artifactId, selectedProject ->
+		def publishing = selectedProject.extensions.findByName('publishing')
+		if (publishing == null) {
+			throw new GradleException("Project ${selectedProject.path} does not apply maven-publish")
+		}
+
+		publishing.publications.withType(MavenPublication).configureEach { publication ->
+			publication.pom.withXml {
+				Node pom = asNode()
+				Closure rewriteDependency = { Node dependency ->
+					String dependencyGroup = dependency.groupId.text()
+					String dependencyArtifact = dependency.artifactId.text()
+					String dependencyVersion = dependency.version.text()
+					if (dependencyGroup == internalGroup && dependencyVersion == customVersion &&
+							!selectedArtifacts.contains(dependencyArtifact)) {
+						dependency.version[0].value = baseVersion
+						selectedProject.logger.lifecycle("Selective POM ${selectedProject.path}: " +
+								"${dependencyGroup}:${dependencyArtifact} -> ${baseVersion}")
+					}
+				}
+				pom.dependencies.dependency.each(rewriteDependency)
+				pom.dependencyManagement.dependencies.dependency.each(rewriteDependency)
+			}
+		}
+	}
+}

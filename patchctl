@@ -15,6 +15,7 @@ Usage:
   patchctl test <project|all> <workspace>
   patchctl build <project|all> <workspace>
   patchctl publish-local <project|all> <workspace>
+  patchctl stage-selective <project|all> <workspace> <new-output-directory>
   patchctl publish-source <project|all> <workspace> [--push]
   patchctl capture <project> <source-repository> <new-output-directory>
 
@@ -23,6 +24,8 @@ Environment:
                     discovered automatically when this is unset.
 
 The apply command never overwrites an existing target repository.
+The stage-selective command prepares a Maven-only upload directory containing
+affected modules; it never connects to an artifact repository.
 The publish-source command is a preview unless --push is supplied. It never
 force-pushes and never stores credentials.
 USAGE
@@ -51,6 +54,7 @@ load_project() {
 	unset PATCH_BRANCH EXPECTED_VERSION VERSION_FILE JAVA_VERSION
 	unset TEST_ARGS BUILD_ARGS PUBLISH_ARGS EXPECTED_CVES
 	unset PUBLISH_REPOSITORY_URL SOURCE_TAG
+	unset SELECTIVE_BASE_VERSION SELECTIVE_GROUP SELECTIVE_MODULES
 
 	# Project definitions are trusted files maintained in this kit.
 	# shellcheck source=/dev/null
@@ -227,6 +231,168 @@ run_gradle_one() {
 	)
 }
 
+validate_selective_pom() {
+	local pom="$1"
+	local group="$2"
+	local custom_version="$3"
+	local selected_csv="$4"
+
+	grep -Fq "<version>$custom_version</version>" "$pom" ||
+		die "$pom does not declare selective artifact version $custom_version"
+
+	awk -v internal_group="$group" -v custom_version="$custom_version" \
+		-v selected_csv="$selected_csv" '
+		BEGIN {
+			split(selected_csv, selected, ",")
+			for (item in selected) {
+				selected_artifacts[selected[item]] = 1
+			}
+		}
+		/<dependency>/ {
+			in_dependency = 1
+			dependency_group = ""
+			dependency_artifact = ""
+			dependency_version = ""
+		}
+		in_dependency && /<groupId>/ {
+			dependency_group = $0
+			sub(/^.*<groupId>/, "", dependency_group)
+			sub(/<\/groupId>.*$/, "", dependency_group)
+		}
+		in_dependency && /<artifactId>/ {
+			dependency_artifact = $0
+			sub(/^.*<artifactId>/, "", dependency_artifact)
+			sub(/<\/artifactId>.*$/, "", dependency_artifact)
+		}
+		in_dependency && /<version>/ {
+			dependency_version = $0
+			sub(/^.*<version>/, "", dependency_version)
+			sub(/<\/version>.*$/, "", dependency_version)
+		}
+		/<\/dependency>/ {
+			if (dependency_group == internal_group &&
+				dependency_version == custom_version &&
+				!selected_artifacts[dependency_artifact]) {
+				printf "unrewritten custom dependency %s:%s:%s in %s\n", \
+					dependency_group, dependency_artifact, dependency_version, FILENAME > "/dev/stderr"
+				exit 1
+			}
+			in_dependency = 0
+		}
+	' "$pom" || die "selective POM validation failed for $pom"
+}
+
+stage_selective_one() {
+	local project_id="$1"
+	local workspace="$2"
+	local stage_root="$3"
+	load_project "$project_id"
+	verify_one "$project_id" "$workspace"
+
+	[[ -n "${SELECTIVE_BASE_VERSION:-}" ]] ||
+		die "missing SELECTIVE_BASE_VERSION for $PROJECT_ID"
+	[[ -n "${SELECTIVE_GROUP:-}" ]] || die "missing SELECTIVE_GROUP for $PROJECT_ID"
+	[[ "${#SELECTIVE_MODULES[@]}" -gt 0 ]] || die "missing SELECTIVE_MODULES for $PROJECT_ID"
+
+	local repository="$workspace/$TARGET_DIRECTORY"
+	local java_home
+	java_home="$(resolve_java_home)"
+	[[ -x "$java_home/bin/java" ]] || die "$java_home does not contain an executable Java runtime"
+
+	local selected_csv
+	selected_csv="$(IFS=,; echo "${SELECTIVE_MODULES[*]}")"
+	local -a gradle_args=(
+		"--init-script"
+		"$KIT_DIR/gradle/selective-pom.init.gradle"
+		"-DspringPatchKit.baseVersion=$SELECTIVE_BASE_VERSION"
+		"-DspringPatchKit.customVersion=$EXPECTED_VERSION"
+		"-DspringPatchKit.internalGroup=$SELECTIVE_GROUP"
+		"-DspringPatchKit.selectedArtifacts=$selected_csv"
+	)
+	local module
+	for module in "${SELECTIVE_MODULES[@]}"; do
+		gradle_args+=(
+			":$module:jar"
+			":$module:sourcesJar"
+			":$module:javadocJar"
+			":$module:generatePomFileForMavenJavaPublication"
+		)
+	done
+
+	echo "generating selective Maven publications for $PROJECT_ID with $java_home"
+	(
+		cd "$repository"
+		env JAVA_HOME="$java_home" ./gradlew "${gradle_args[@]}"
+	)
+
+	local group_path="${SELECTIVE_GROUP//.//}"
+	for module in "${SELECTIVE_MODULES[@]}"; do
+		local target_directory="$stage_root/$group_path/$module/$EXPECTED_VERSION"
+		mkdir -p "$target_directory"
+
+		local main_jar="$repository/$module/build/libs/$module-$EXPECTED_VERSION.jar"
+		local sources_jar="$repository/$module/build/libs/$module-$EXPECTED_VERSION-sources.jar"
+		local javadoc_jar="$repository/$module/build/libs/$module-$EXPECTED_VERSION-javadoc.jar"
+		local pom="$repository/$module/build/publications/mavenJava/pom-default.xml"
+		[[ -f "$main_jar" ]] || die "missing $main_jar"
+		[[ -f "$sources_jar" ]] || die "missing $sources_jar"
+		[[ -f "$javadoc_jar" ]] || die "missing $javadoc_jar"
+		[[ -f "$pom" ]] || die "missing $pom"
+		validate_selective_pom "$pom" "$SELECTIVE_GROUP" "$EXPECTED_VERSION" "$selected_csv"
+
+		cp "$main_jar" "$target_directory/"
+		cp "$sources_jar" "$target_directory/"
+		cp "$javadoc_jar" "$target_directory/"
+		cp "$pom" "$target_directory/$module-$EXPECTED_VERSION.pom"
+		echo "staged $SELECTIVE_GROUP:$module:$EXPECTED_VERSION"
+	done
+
+	verify_one "$project_id" "$workspace"
+}
+
+write_selective_checksums() {
+	local stage_root="$1"
+	local checksum_tool=""
+	if command -v sha256sum >/dev/null 2>&1; then
+		checksum_tool="sha256sum"
+	elif command -v shasum >/dev/null 2>&1; then
+		checksum_tool="shasum"
+	else
+		die "sha256sum or shasum is required to checksum selective publications"
+	fi
+
+	(
+		cd "$stage_root"
+		find . -type f ! -name SHA256SUMS -print | sort | while IFS= read -r file; do
+			if [[ "$checksum_tool" == "sha256sum" ]]; then
+				sha256sum "$file"
+			else
+				shasum -a 256 "$file"
+			fi
+		done > SHA256SUMS
+	)
+}
+
+stage_selective() {
+	local selection="$1"
+	local workspace="$2"
+	local output_directory="$3"
+	[[ ! -e "$output_directory" ]] ||
+		die "$output_directory already exists; selective staging requires a new directory"
+	local output_parent
+	output_parent="$(dirname "$output_directory")"
+	mkdir -p "$output_parent"
+	local partial_directory="$output_directory.partial.$$"
+	[[ ! -e "$partial_directory" ]] || die "$partial_directory already exists"
+	mkdir -p "$partial_directory"
+
+	for_selection "$selection" stage_selective_one "$workspace" "$partial_directory"
+	write_selective_checksums "$partial_directory"
+	mv "$partial_directory" "$output_directory"
+	echo "selective Maven upload directory is ready: $output_directory"
+	echo "upload its repository paths and retain SHA256SUMS as evidence; it contains no Gradle module metadata"
+}
+
 source_publish_one() {
 	local project_id="$1"
 	local workspace="$2"
@@ -354,6 +520,10 @@ main() {
 			local publish_mode="preview"
 			[[ "${4:-}" == "--push" ]] && publish_mode="push"
 			for_selection "$2" source_publish_one "$3" "$publish_mode"
+			;;
+		stage-selective)
+			[[ $# -eq 4 ]] || { usage; exit 2; }
+			stage_selective "$2" "$3" "$4"
 			;;
 		capture)
 			[[ $# -eq 4 ]] || { usage; exit 2; }
