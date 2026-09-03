@@ -1,7 +1,8 @@
-From 2a8709eb3861bef6a14ba0e13def9c6f1ccb9a0d Mon Sep 17 00:00:00 2001
+From 481c277b95966aa1f18d170f36b9fa6f576c5574 Mon Sep 17 00:00:00 2001
 From: woozer <wouter.zwiers@gmail.com>
-Date: Tue, 1 Sep 2026 16:00:24 +0200
-Subject: [PATCH 03/14] Set private Spring Framework backport version
+Date: Thu, 3 Sep 2026 12:38:11 +0200
+Subject: [PATCH 13/14] Set private Spring Framework cumulative backport
+ version
 
 Signed-off-by: woozer <wouter.zwiers@gmail.com>
 ---
@@ -9,12 +10,12 @@ Signed-off-by: woozer <wouter.zwiers@gmail.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/gradle.properties b/gradle.properties
-index edc16dab..48ac6a7d 100644
+index 48ac6a7d..8c7a116d 100644
 --- a/gradle.properties
 +++ b/gradle.properties
 @@ -1,4 +1,4 @@
--version=6.2.19
-+version=6.2.19-cve.1
+-version=6.2.19-cve.1
++version=6.2.19-cve.2
  
  org.gradle.caching=true
  org.gradle.jvmargs=-Xmx2048m

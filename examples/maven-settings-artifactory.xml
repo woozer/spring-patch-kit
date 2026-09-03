@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <!--
+    Keep the repository URL and credentials outside Git. Maven resolves these
+    placeholders from the current process environment.
+  -->
+  <mirrors>
+    <mirror>
+      <id>patch-artifactory</id>
+      <name>Corporate Artifactory virtual Maven repository</name>
+      <url>${env.PATCH_ARTIFACTORY_MAVEN_URL}</url>
+      <mirrorOf>*</mirrorOf>
+    </mirror>
+  </mirrors>
+
+  <servers>
+    <server>
+      <id>patch-artifactory</id>
+      <username>${env.PATCH_ARTIFACTORY_USERNAME}</username>
+      <password>${env.PATCH_ARTIFACTORY_PASSWORD}</password>
+    </server>
+  </servers>
+</settings>

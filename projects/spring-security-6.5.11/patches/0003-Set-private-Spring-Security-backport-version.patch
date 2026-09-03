@@ -1,0 +1,26 @@
+From 64234c581c2440b6255c3ab27d4614989d87a34a Mon Sep 17 00:00:00 2001
+From: woozer <wouter.zwiers@gmail.com>
+Date: Thu, 3 Sep 2026 12:38:11 +0200
+Subject: [PATCH 3/4] Set private Spring Security backport version
+
+Signed-off-by: woozer <wouter.zwiers@gmail.com>
+---
+ gradle.properties | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gradle.properties b/gradle.properties
+index f0f55bf6..863f6da7 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -14,7 +14,7 @@
+ # limitations under the License.
+ #
+ springBootVersion=3.3.3
+-version=6.5.11
++version=6.5.11-cve1
+ samplesBranch=6.5.x
+ org.gradle.jvmargs=-Xmx3g -XX:+HeapDumpOnOutOfMemoryError
+ org.gradle.parallel=true
+-- 
+2.50.1 (Apple Git-155)
+

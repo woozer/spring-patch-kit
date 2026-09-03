@@ -1,0 +1,56 @@
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+String mirrorUrl = System.getenv('PATCH_ARTIFACTORY_MAVEN_URL')
+if (!mirrorUrl) {
+	throw new GradleException('PATCH_ARTIFACTORY_MAVEN_URL is required by the Artifactory mirror init script')
+}
+
+String mirrorUsername = System.getenv('PATCH_ARTIFACTORY_USERNAME')
+String mirrorPassword = System.getenv('PATCH_ARTIFACTORY_PASSWORD')
+if ((mirrorUsername && !mirrorPassword) || (!mirrorUsername && mirrorPassword)) {
+	throw new GradleException('Set both PATCH_ARTIFACTORY_USERNAME and PATCH_ARTIFACTORY_PASSWORD, or neither')
+}
+
+String normalizedMirrorUrl = mirrorUrl.replaceAll('/+$', '')
+
+Closure configureMirror = { repositoryHandler ->
+	repositoryHandler.all { repository ->
+		boolean isMirror = repository instanceof MavenArtifactRepository &&
+				repository.url.toString().replaceAll('/+$', '') == normalizedMirrorUrl
+		if (!isMirror) {
+			repositoryHandler.remove(repository)
+		}
+	}
+
+	boolean alreadyPresent = repositoryHandler.findAll { repository ->
+		repository instanceof MavenArtifactRepository &&
+				repository.url.toString().replaceAll('/+$', '') == normalizedMirrorUrl
+	}.size() > 0
+	if (!alreadyPresent) {
+		repositoryHandler.maven { repository ->
+			repository.name = 'springPatchKitArtifactory'
+			repository.url = mirrorUrl
+			repository.metadataSources {
+				gradleMetadata()
+				mavenPom()
+				artifact()
+			}
+			if (mirrorUsername && mirrorPassword) {
+				repository.credentials {
+					username = mirrorUsername
+					password = mirrorPassword
+				}
+			}
+		}
+	}
+}
+
+gradle.settingsEvaluated { settings ->
+	configureMirror(settings.pluginManagement.repositories)
+	configureMirror(settings.dependencyResolutionManagement.repositories)
+}
+
+gradle.beforeProject { project ->
+	configureMirror(project.buildscript.repositories)
+	configureMirror(project.repositories)
+}
