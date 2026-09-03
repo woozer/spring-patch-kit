@@ -8,9 +8,9 @@ clean application resolution remain approval steps in the target environment.
 
 | Project | Upstream base | Private version | CVE commits | Backport branch head |
 | --- | --- | --- | ---: | --- |
-| Spring Framework | `v6.2.19` (`6214eae8bd02c2ed7ab382bb8d16a9cc6de49522`) | `6.2.19-cve.2` | 10 | `35bbec1fecbe4d84be10bacfba825c92405676b5` |
-| Spring Integration | `v6.5.10` (`5624e08f74a436c5709db81888f552a19ed779d1`) | `6.5.10-cve.2` | 11 | `e636308a04d715662ed22d8185b8ce446e793722` |
-| Spring Security | `6.5.11` (`73b077790fcb04ac3712033d3e939daf42264545`) | `6.5.11-cve1` | 2 | `bcb6bdc09b723f13f4c6f16c11d449ea29d2623d` |
+| Spring Framework | `v6.2.19` (`6214eae8bd02c2ed7ab382bb8d16a9cc6de49522`) | `6.2.19-cve.2` | 10 | `138ec85093f696bc1535bb2f429effb41ca575f5` |
+| Spring Integration | `v6.5.10` (`5624e08f74a436c5709db81888f552a19ed779d1`) | `6.5.10-cve.2` | 11 | `9d228812894fe8ff6fb3720c43aeed00c853550d` |
+| Spring Security | `6.5.11` (`73b077790fcb04ac3712033d3e939daf42264545`) | `6.5.11-cve1` | 2 | `f1ea6f19b0d9c480505f96806efb1d492b1c47a0` |
 
 All 23 CVEs have one distinct `Backport fix for CVE-...` commit containing the
 production change and its focused regression tests. Every CVE mail patch has a
@@ -19,9 +19,13 @@ in [the coverage registry](cve-2026-coverage.md).
 
 ## Verification performed
 
-The following checks completed on macOS with Temurin JDK 21.0.6. Clean replay
-used local `file://` mirrors of the exact upstream repositories, which exercises
-the same clone-from-tag and `git am --3way` path as a network replay.
+The following checks completed on macOS with Temurin JDK 21.0.6. The final
+release-candidate replay cloned the exact upstream tags over HTTPS and applied
+the checked-in series using `git am --3way`. The recorded branch heads are the
+exact commits used for this test, build, and artifact-staging run. A later
+replay can have different commit hashes because Git supplies new committer
+timestamps; the patch content is portable, while the published immutable tag
+identifies the canonical release source.
 
 - `patchctl apply all`: all mail patches applied from the three pinned tags and
   all versions, branches, clean worktrees, and expected CVE subjects verified.
