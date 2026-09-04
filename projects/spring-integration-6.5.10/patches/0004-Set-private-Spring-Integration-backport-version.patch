@@ -1,7 +1,7 @@
-From f8f0faa8d3420239454effa25a230e632df9378c Mon Sep 17 00:00:00 2001
+From 176b4c5162fcbb29c8f6dcf9f5e98f17b570317e Mon Sep 17 00:00:00 2001
 From: Wouter Zwiers <wouter.zwiers@gmail.com>
 Date: Tue, 1 Sep 2026 20:08:43 +0200
-Subject: [PATCH 04/15] Set private Spring Integration backport version
+Subject: [PATCH 04/14] Set private Spring Integration backport version
 
 Signed-off-by: Wouter Zwiers <wouter.zwiers@gmail.com>
 ---
@@ -9,12 +9,12 @@ Signed-off-by: Wouter Zwiers <wouter.zwiers@gmail.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/gradle.properties b/gradle.properties
-index 8fa0856c..030f1325 100644
+index 8fa0856..af106fa 100644
 --- a/gradle.properties
 +++ b/gradle.properties
 @@ -1,4 +1,4 @@
 -version=6.5.10
-+version=6.5.10-cve.1
++version=6.5.10-cve1
  org.gradle.jvmargs=-Xmx2g -XX:+HeapDumpOnOutOfMemoryError -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8
  kotlin.jvm.target.validation.mode=IGNORE
  org.gradle.caching=true

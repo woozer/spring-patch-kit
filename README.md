@@ -9,8 +9,8 @@ The registry contains:
 
 | Project definition | Base | Private version | CVEs |
 | --- | --- | --- | --- |
-| `spring-framework-6.2.19` | `v6.2.19` | `6.2.19-cve.2` | 10 cumulative fixes |
-| `spring-integration-6.5.10` | `v6.5.10` | `6.5.10-cve.2` | 11 cumulative fixes |
+| `spring-framework-6.2.19` | `v6.2.19` | `6.2.19-cve1` | 10 cumulative fixes |
+| `spring-integration-6.5.10` | `v6.5.10` | `6.5.10-cve1` | 11 cumulative fixes |
 | `spring-security-6.5.11` | `6.5.11` | `6.5.11-cve1` | CVE-2026-59270, CVE-2026-59276 |
 
 These are private, source-maintained builds and are not vendor-supported
@@ -252,8 +252,8 @@ bash ./patchctl stage-selective all /path/to/replayed-spring \
 The output directory must not exist. The command generates and validates:
 
 ```text
-org.springframework:{spring-beans,spring-context-support,spring-expression,spring-web,spring-webflux,spring-webmvc}:6.2.19-cve.2
-org.springframework.integration:{spring-integration-core,spring-integration-http,spring-integration-ip,spring-integration-jdbc,spring-integration-scripting,spring-integration-smb,spring-integration-zip}:6.5.10-cve.2
+org.springframework:{spring-beans,spring-context-support,spring-expression,spring-web,spring-webflux,spring-webmvc}:6.2.19-cve1
+org.springframework.integration:{spring-integration-core,spring-integration-http,spring-integration-ip,spring-integration-jdbc,spring-integration-scripting,spring-integration-smb,spring-integration-zip}:6.5.10-cve1
 org.springframework.security:{spring-security-config,spring-security-core,spring-security-crypto,spring-security-ldap,spring-security-web}:6.5.11-cve1
 ```
 
@@ -347,8 +347,8 @@ For complete mode, upload all private version sets to the approved Artifactory
 Maven repository while preserving their Maven coordinates and directory layout:
 
 ```text
-org.springframework:*:6.2.19-cve.2
-org.springframework.integration:*:6.5.10-cve.2
+org.springframework:*:6.2.19-cve1
+org.springframework.integration:*:6.5.10-cve1
 org.springframework.security:*:6.5.11-cve1
 ```
 
@@ -422,7 +422,7 @@ apply -> verify -> test -> build -> publish-local -> manual Artifactory upload
       -> clean dependency resolution -> application smoke test
 ```
 
-Use immutable versions such as `6.2.19-cve.1`; never publish private artifacts
+Use immutable versions such as `6.2.19-cve1`; never publish private artifacts
 under Spring's official version numbers. Publish to an internal Nexus or
 Artifactory repository, generate checksums and an SBOM, and retain:
 

@@ -8,9 +8,9 @@ clean application resolution remain approval steps in the target environment.
 
 | Project | Upstream base | Private version | CVE commits | Backport branch head |
 | --- | --- | --- | ---: | --- |
-| Spring Framework | `v6.2.19` (`6214eae8bd02c2ed7ab382bb8d16a9cc6de49522`) | `6.2.19-cve.2` | 10 | `138ec85093f696bc1535bb2f429effb41ca575f5` |
-| Spring Integration | `v6.5.10` (`5624e08f74a436c5709db81888f552a19ed779d1`) | `6.5.10-cve.2` | 11 | `9d228812894fe8ff6fb3720c43aeed00c853550d` |
-| Spring Security | `6.5.11` (`73b077790fcb04ac3712033d3e939daf42264545`) | `6.5.11-cve1` | 2 | `f1ea6f19b0d9c480505f96806efb1d492b1c47a0` |
+| Spring Framework | `v6.2.19` (`6214eae8bd02c2ed7ab382bb8d16a9cc6de49522`) | `6.2.19-cve1` | 10 | `8bb3282825b3ec4de2c68c3e0fe7ec23e0dd49ae` |
+| Spring Integration | `v6.5.10` (`5624e08f74a436c5709db81888f552a19ed779d1`) | `6.5.10-cve1` | 11 | `a62a4dc98dc60b9febb1972a3e34dc9faca470ec` |
+| Spring Security | `6.5.11` (`73b077790fcb04ac3712033d3e939daf42264545`) | `6.5.11-cve1` | 2 | `837d6b2e27e68e230aa66f322b83b369585562c2` |
 
 All 23 CVEs have one distinct `Backport fix for CVE-...` commit containing the
 production change and its focused regression tests. Every CVE mail patch has a
